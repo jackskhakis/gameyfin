@@ -32,7 +32,7 @@ public class DownloadService {
         Path path = filesystemService.getPath(g.getPath());
 
         if (!Files.isDirectory(path)) return getFilenameWithExtension(path);
-        return getFilenameWithExtension(path) + ".zip";
+        return getFilenameWithExtension(path) + ".exe";
     }
 
     public long getDownloadFileSize(DetectedGame game) {
@@ -44,7 +44,6 @@ public class DownloadService {
                 log.info("Calculated file size for {} ({} MB).", path, Math.divideExact(fileSize, 1000000L));
                 return fileSize;
             } else {
-                // return zero since we cannot set content length for ZipOutputStreams that are used to archive directories
                 return 0;
             }
         } catch (IOException e) {
@@ -69,7 +68,7 @@ public class DownloadService {
 
         try {
             if (path.toFile().isDirectory()) {
-                sendGamefilesAsZipToClient(path, outputStream);
+                sendFilesToClient(path, outputStream);
             } else {
                 sendGamefileToClient(path, outputStream);
             }
@@ -84,11 +83,25 @@ public class DownloadService {
         log.info("Downloaded game files of {} in {} seconds.", game.getTitle(), (int) stopWatch.getTotalTimeSeconds());
     }
 
+private void sendFilesToClient(Path path, OutputStream outputStream) {
+    try {
+        Files.walkFileTree(path, new SimpleFileVisitor<>() {
+            @SneakyThrows
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                log.debug("Sending file {}...", file);
+                Files.copy(file, outputStream);
+                return FileVisitResult.CONTINUE;
+            }
+        });
+    } catch (IOException e) {
+        log.error("Error while sending files:", e);
+    }
+}
+
     private void sendGamefileToClient(Path path, OutputStream outputStream) {
         try {
             Files.copy(path, outputStream);
         } catch (ClientAbortException e) {
-            // Aborted downloads will be handled gracefully
             throw new DownloadAbortedException();
         } catch (IOException e) {
             log.error("Error while downloading file:", e);
@@ -116,7 +129,6 @@ public class DownloadService {
 
             zos.close();
         } catch (ClientAbortException e) {
-            // Aborted downloads will be handled gracefully
             throw new DownloadAbortedException();
         } catch (IOException e) {
             log.error("Error while zipping files:", e);
